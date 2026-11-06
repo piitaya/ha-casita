@@ -7,10 +7,20 @@ Casita is a little house that lives in your Home Assistant. You talk to him with
 ## What you get
 
 - **A Casita panel** in the sidebar. Casita lives there: talk to him by text or voice, pet him, poke him, toss him around. When nobody plays with him, he gets bored and falls asleep.
-- **A conversation agent** for Assist. Commands Home Assistant understands stay local and fast. Everything else goes to your LLM conversation agent with Casita's personality. Every reply comes with an emotion.
+- **A conversation agent** for Assist. It is a wrapper: it sits on top of your own conversation agent and adds Casita's personality, an emotion on every reply and a mood.
 - **Sensors** for his emotion and his mood, to use in your automations.
 
-Casita works without any LLM too: he then answers with the local agent only, and his emotions come from simple rules.
+## How the agent works
+
+Casita does not replace your conversation agent, it wraps it:
+
+1. Casita first tries the request with the local agent of Home Assistant, like **Prefer handling commands locally** does. Simple commands ("turn on the light") stay local and fast.
+2. Everything else goes to the LLM conversation agent you picked (OpenAI, Anthropic, Google…), with Casita's personality added to its prompt.
+3. Every reply gets an emotion and moves Casita's mood.
+
+Because Casita already does step 1, **turn off "Prefer handling commands locally" in the assistant that uses Casita**. If it stays on, the assistant handles simple commands before they reach Casita: they get no personality and no emotion.
+
+Without an LLM agent, Casita only uses the local agent, and his emotions come from simple rules.
 
 ## Install
 
@@ -35,7 +45,7 @@ To talk to Casita through a Voice Preview Edition or another voice device:
 
 1. Go to **Settings > Voice assistants** and open the assistant the device uses, or the Casita assistant created above.
 2. Set **Conversation agent** to Casita.
-3. Turn off **Prefer handling commands locally**. Otherwise simple commands skip Casita and get no emotion.
+3. Turn off **Prefer handling commands locally**. Casita already does it (see [How the agent works](#how-the-agent-works)).
 4. On the device page, set its assistant to that one.
 
 When you talk to the device, Casita reacts in the panel too.
