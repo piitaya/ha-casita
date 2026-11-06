@@ -29,7 +29,16 @@ Casita needs Home Assistant 2026.10 or newer.
 2. Open the **Casita** panel in the sidebar and click **Create Casita assistant**. It copies your preferred assistant with Casita as the conversation agent.
 3. Talk to Casita.
 
-You can also use Casita in any voice assistant, a Voice Preview Edition included: pick Casita as its conversation agent and turn off **Prefer handling commands locally**. The panel follows these devices and shows their conversations.
+### Use Casita on a voice device
+
+To talk to Casita through a Voice Preview Edition or another voice device:
+
+1. Go to **Settings > Voice assistants** and open the assistant the device uses, or the Casita assistant created above.
+2. Set **Conversation agent** to Casita.
+3. Turn off **Prefer handling commands locally**. Otherwise simple commands skip Casita and get no emotion.
+4. On the device page, set its assistant to that one.
+
+When you talk to the device, Casita reacts in the panel too.
 
 Optional, in the Casita options:
 
