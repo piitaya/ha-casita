@@ -1,7 +1,5 @@
 interact:
   target:
-    device:
-      integration: casita
     entity:
       integration: casita
   fields:
@@ -36,8 +34,6 @@ interact:
 
 set_emotion:
   target:
-    device:
-      integration: casita
     entity:
       integration: casita
   fields:
