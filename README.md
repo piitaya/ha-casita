@@ -80,6 +80,10 @@ Local commands answer in under a second. Requests that go to the LLM take as lon
 - [Emotions and mood](docs/emotions-and-mood.md): the 28 expressions, the rules and the mood sensors.
 - [Reference](docs/reference.md): actions, sensors, event and websocket.
 
+## Credits
+
+Casita is the character shown on the screen of the ESPHome voice assistant firmware for the ESP32-S3-BOX ([esphome/wake-word-voice-assistants](https://github.com/esphome/wake-word-voice-assistants), Apache 2.0). All credit for the character goes to its original designers.
+
 ## License
 
-MIT
+The code is under the MIT license. The Casita character belongs to its authors.
