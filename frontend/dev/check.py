@@ -301,7 +301,7 @@ def main() -> int:
         dlg = pg.evaluate(dlg_js)
         saved = pg.evaluate("__userData.casita")
         check("settings: saved per user, only the pipeline", saved == {"pipeline_id": "p-atelier"}, saved)
-        check("settings: local-first warning right under the field", "« Préférer gérer les commandes localement »" in dlg["warning"] and not dlg["note"], dlg)
+        check("settings: local-first warning right under the field", "ne passent pas par Casita : il n’y réagit pas." in dlg["warning"] and not dlg["note"], dlg)
         shot(pg, "settings-1280-light-fr-warning.png")
         sel.select_option("p-ha")
         pg.wait_for_timeout(300)
@@ -381,7 +381,7 @@ def main() -> int:
         pg.locator("casita-panel").get_by_role("button", name="Réglages").click()
         pg.wait_for_timeout(300)
         dlg = pg.evaluate(dlg_js)
-        check("entries: the local-first warning stays", "« Préférer gérer les commandes localement »" in dlg["warning"], dlg["warning"])
+        check("entries: the local-first warning stays", "ne passent pas par Casita" in dlg["warning"], dlg["warning"])
         pg.keyboard.press("Escape")
         wait_for(pg, "dev.life().phase === null", 15000)
         pg.wait_for_timeout(1500)
@@ -798,6 +798,107 @@ def main() -> int:
         dlg = pg.evaluate(dlg_js)
         check("default: the first Casita assistant, not the preferred one", dlg["options"][0] == "Casita (par défaut)" and not dlg["note"], dlg["options"])
         done(pg, "default assistant")
+
+        # ------------------------------------------------------------------ F2. simple commands skip Casita (prefer local on a Casita assistant)
+        local_js = f"""(() => {{ const e = {sr}.querySelector('.empty.local'); if (!e) return null;
+            const t = (q) => [...e.querySelectorAll(q)].map(n => n.textContent.trim());
+            const r = e.getBoundingClientRect(), c = {sr}.querySelector('.chat').getBoundingClientRect();
+            return {{ text: t('.empty-text'), notes: t('.empty-note'), buttons: t('button'), error: t('.empty-error'),
+                     aboveChat: r.bottom <= c.top + 1, inside: r.left >= 0 && r.right <= innerWidth, disabled: !!e.querySelector('button[disabled]') }}; }})()"""
+        dlg_warn_js = f"""(() => {{ const d = {sr}.querySelector('casita-settings-dialog').shadowRoot; const w = d.querySelector('.warning'); if (!w) return null;
+            const t = (q) => [...w.querySelectorAll(q)].map(n => n.textContent.trim());
+            return {{ text: t('#warning-text'), buttons: t('button'), notes: t('.warning-note'), error: t('.warning-error') }}; }})()"""
+        updates_js = "__log.filter(l => l.type === 'callWS' && l.msg.type === 'assist_pipeline/pipeline/update').map(l => l.msg)"
+        lists_js = "__log.filter(l => l.type === 'callWS' && l.msg.type === 'assist_pipeline/pipeline/list').length"
+        fr_warn = "Avec cet assistant, les commandes simples (« allume la lumière ») ne passent pas par Casita : il n’y réagit pas."
+
+        # admin: fix from the main view
+        pg = open_page(1280, 800, False, "fr", "&pipeline=p-atelier")
+        pg.wait_for_timeout(3500)
+        e = pg.evaluate(local_js)
+        check("local: banner near the chat, says what happens", e and e["aboveChat"] and e["inside"] and e["text"] == [fr_warn], e)
+        check("local (admin): a « Corriger » button", e and e["buttons"] == ["Corriger"] and not e["notes"], e)
+        check("local: same place and style as the no-assistant banner", pg.evaluate(f"getComputedStyle({sr}.querySelector('.empty.local')).borderRadius") == "16px")
+        shot(pg, "local-1280-light-fr-admin.png")
+        pg.locator("casita-panel").get_by_role("button", name="Réglages").click()
+        pg.wait_for_timeout(300)
+        w = pg.evaluate(dlg_warn_js)
+        check("local: also under the Assistant field in the settings, with « Corriger »", w and w["text"] == [fr_warn] and w["buttons"] == ["Corriger"], w)
+        shot(pg, "local-settings-1280-light-fr.png")
+        pg.keyboard.press("Escape")
+        pg.wait_for_timeout(200)
+        lists0 = pg.evaluate(lists_js)
+        pg.locator("casita-panel").locator(".empty.local").get_by_role("button", name="Corriger").click()
+        ok = wait_for(pg, f"!{sr}.querySelector('.empty.local')", 3000)
+        upd = pg.evaluate(updates_js)
+        want = {
+            "type": "assist_pipeline/pipeline/update", "pipeline_id": "p-atelier", "name": "Atelier", "language": "fr",
+            "conversation_engine": "conversation.casita_atelier", "conversation_language": "fr", "stt_engine": "stt.faster_whisper", "stt_language": "fr",
+            "tts_engine": "tts.piper", "tts_language": "fr", "tts_voice": "fr_FR-upmc-medium", "wake_word_entity": "wake_word.openwakeword", "wake_word_id": "hey_jarvis",
+            "prefer_local_intents": False,
+        }
+        check("fix: pipeline/update with every field, unchanged but prefer_local_intents false", len(upd) == 1 and upd[0] == want, upd)
+        check("fix: the list is read again", pg.evaluate(lists_js) > lists0)
+        check("fix: the banner disappears", ok)
+        pg.locator("casita-panel").get_by_role("button", name="Réglages").click()
+        pg.wait_for_timeout(300)
+        check("fix: no warning left in the settings", pg.evaluate(dlg_warn_js) is None)
+        pg.keyboard.press("Escape")
+        inp = pg.locator("casita-panel").locator("#chat-input")
+        inp.click()
+        inp.fill("allume la lumière")
+        inp.press("Enter")
+        ok = wait_for(pg, "(() => { const d = dev.life(); return d.talk && d.expression === 'Happy'; })()", 6000)
+        check("fix: simple commands now reach Casita (his emotion shows)", ok, life(pg)["expression"])
+        done(pg, "local commands: fix")
+
+        # admin: fix from the settings (en)
+        pg = open_page(390, 844, True, "en", "&pipeline=p-atelier")
+        pg.wait_for_timeout(3500)
+        e = pg.evaluate(local_js)
+        check("local (en): banner text and « Fix »", e and e["text"] == ["With this assistant, simple commands (\"turn on the light\") skip Casita: he won’t react to them."] and e["buttons"] == ["Fix"] and e["inside"], e)
+        shot(pg, "local-390-dark-en-admin.png")
+        pg.locator("casita-panel").get_by_role("button", name="Settings").tap()
+        pg.wait_for_timeout(300)
+        shot(pg, "local-settings-390-dark-en.png")
+        pg.locator("casita-panel").locator("casita-settings-dialog").get_by_role("button", name="Fix").tap()
+        ok = wait_for(pg, f"!{sr}.querySelector('casita-settings-dialog').shadowRoot.querySelector('.warning')", 3000)
+        check("fix from the settings: the warning goes, in the dialog and the room", ok and pg.evaluate(f"!{sr}.querySelector('.empty.local')") and len(pg.evaluate(updates_js)) == 1)
+        done(pg, "local commands: fix from settings")
+
+        # failure: a clear message, the banner stays
+        pg = open_page(1280, 800, False, "fr", "&pipeline=p-atelier&updatefail=1")
+        pg.wait_for_timeout(3500)
+        pg.locator("casita-panel").locator(".empty.local").get_by_role("button", name="Corriger").click()
+        wait_for(pg, f"!!{sr}.querySelector('.empty.local .empty-error')", 3000)
+        e = pg.evaluate(local_js)
+        check("fix fails: a clear message, the banner stays", e and e["error"] and e["error"][0].startswith("Impossible de corriger l’assistant.") and not e["disabled"], e)
+        shot(pg, "local-1280-light-fr-failed.png")
+        pg.locator("casita-panel").get_by_role("button", name="Réglages").click()
+        pg.wait_for_timeout(300)
+        w = pg.evaluate(dlg_warn_js)
+        check("fix fails: the message shows in the settings too", w and w["error"] and w["error"][0].startswith("Impossible de corriger l’assistant."), w)
+        done(pg, "local commands: fix fails")
+
+        # not an admin: ask one
+        pg = open_page(1280, 800, False, "fr", "&pipeline=p-atelier&admin=0")
+        pg.wait_for_timeout(3500)
+        e = pg.evaluate(local_js)
+        check("local (not admin): « Demande à un administrateur de corriger cet assistant. », no button", e and e["text"] == [fr_warn] and e["notes"] == ["Demande à un administrateur de corriger cet assistant."] and not e["buttons"], e)
+        shot(pg, "local-1280-light-fr-user.png")
+        pg.locator("casita-panel").get_by_role("button", name="Réglages").click()
+        pg.wait_for_timeout(300)
+        w = pg.evaluate(dlg_warn_js)
+        check("local (not admin): settings say the same, no button", w and not w["buttons"] and w["notes"] == ["Demande à un administrateur de corriger cet assistant."], w)
+        pg.keyboard.press("Escape")
+        # turned off elsewhere: gone at the next read (back on the panel)
+        pg.evaluate("dev.setPreferLocal('p-atelier', false)")
+        pg.evaluate("Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange'))")
+        pg.wait_for_timeout(100)
+        pg.evaluate("Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange'))")
+        ok = wait_for(pg, f"!{sr}.querySelector('.empty.local')", 3000)
+        check("local: turned off elsewhere → the banner disappears", ok)
+        done(pg, "local commands: not admin")
 
         # ------------------------------------------------------------------ G. interactions → casita.interact
         pg = open_page(1280, 800, False, "fr")

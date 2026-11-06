@@ -1,6 +1,6 @@
 {
   "name": "casita-panel",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "description": "Casita sidebar panel for Home Assistant (Lit 3 + TypeScript)",
   "type": "module",

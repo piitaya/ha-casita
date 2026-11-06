@@ -130,6 +130,30 @@ export interface AssistPipelineCreate {
 export const createAssistPipeline = (hass: HomeAssistant, pipeline: AssistPipelineCreate) =>
   hass.callWS<AssistPipeline>({ type: "assist_pipeline/pipeline/create", ...pipeline });
 
+/**
+ * `assist_pipeline/pipeline/update` (admin only) replaces the whole pipeline: every
+ * PIPELINE_FIELDS key is sent again. `acknowledge_media_id` is left out: the schema takes
+ * it, but 2026.11 does not store it and fails on it.
+ */
+export const updateAssistPipeline = (hass: HomeAssistant, pipeline: AssistPipeline, changes: Partial<AssistPipelineCreate>) =>
+  hass.callWS<AssistPipeline>({
+    type: "assist_pipeline/pipeline/update",
+    pipeline_id: pipeline.id,
+    name: pipeline.name,
+    language: pipeline.language,
+    conversation_engine: pipeline.conversation_engine,
+    conversation_language: pipeline.conversation_language,
+    stt_engine: pipeline.stt_engine ?? null,
+    stt_language: pipeline.stt_language ?? null,
+    tts_engine: pipeline.tts_engine ?? null,
+    tts_language: pipeline.tts_language ?? null,
+    tts_voice: pipeline.tts_voice ?? null,
+    wake_word_entity: pipeline.wake_word_entity ?? null,
+    wake_word_id: pipeline.wake_word_id ?? null,
+    prefer_local_intents: !!pipeline.prefer_local_intents,
+    ...changes,
+  });
+
 export const listConversationAgents = (hass: HomeAssistant) =>
   hass.callWS<{ agents: { id: string; name: string; supported_languages: string[] | "*" }[] }>({
     type: "conversation/agent/list",

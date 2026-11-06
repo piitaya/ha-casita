@@ -25,6 +25,16 @@ export class CasitaSettingsDialog extends LitElement {
   /** e.g. the pipeline lets local commands bypass Casita. */
   @property() public warning?: string;
 
+  /** Button under the warning (admins), e.g. "Fix". Emits `warning-action`. */
+  @property() public warningAction?: string;
+
+  /** Text under the warning when there is no button, e.g. "ask an administrator". */
+  @property() public warningNote?: string;
+
+  @property() public warningError?: string;
+
+  @property({ type: Boolean }) public warningBusy = false;
+
   /** e.g. the pipeline does not use a Casita agent. */
   @property() public note?: string;
 
@@ -91,7 +101,24 @@ export class CasitaSettingsDialog extends LitElement {
               <svg class="arrow" viewBox="0 0 24 24" aria-hidden="true"><path d=${mdiMenuDown}></path></svg>
             </div>
             <span class="help" id="pipeline-help">${S.pipelineHelp}</span>
-            ${this.warning ? html`<span class="warning" role="note">${this.warning}</span>` : ""}
+            ${this.warning
+              ? html`<div class="warning" role="note">
+                  <span id="warning-text">${this.warning}</span>
+                  ${this.warningAction
+                    ? html`<button
+                        type="button"
+                        class="fix"
+                        aria-describedby="warning-text"
+                        ?disabled=${this.warningBusy}
+                        @click=${() => this.dispatchEvent(new CustomEvent("warning-action"))}
+                      >
+                        ${this.warningAction}
+                      </button>`
+                    : ""}
+                  ${this.warningNote ? html`<span class="warning-note">${this.warningNote}</span>` : ""}
+                  ${this.warningError ? html`<span class="warning-error" role="alert">${this.warningError}</span>` : ""}
+                </div>`
+              : ""}
             ${this.note ? html`<span class="note" role="note">${this.note}</span>` : ""}
           </div>
           <p class="foot">${S.savedUser}</p>
@@ -221,6 +248,41 @@ export class CasitaSettingsDialog extends LitElement {
       border-radius: 8px;
       background: color-mix(in srgb, var(--warning-color, #ffa600) 16%, transparent);
       border-left: 3px solid var(--warning-color, #ffa600);
+    }
+    .warning {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 12px;
+    }
+    .warning > span {
+      flex: 1 1 100%;
+    }
+    .warning-note {
+      color: var(--secondary-text-color, #727272);
+    }
+    .warning-error {
+      color: var(--error-color, #db4437);
+    }
+    .fix {
+      font: inherit;
+      font-size: 13px;
+      font-weight: var(--ha-font-weight-medium, 500);
+      border: 0;
+      border-radius: 999px;
+      padding: 6px 14px;
+      min-height: 32px;
+      cursor: pointer;
+      background: var(--primary-color, #18bcf2);
+      color: var(--text-primary-color, #fff);
+    }
+    .fix[disabled] {
+      opacity: 0.6;
+      cursor: progress;
+    }
+    .fix:focus-visible {
+      outline: 2px solid var(--primary-color, #18bcf2);
+      outline-offset: 2px;
     }
     .note {
       font-style: italic;

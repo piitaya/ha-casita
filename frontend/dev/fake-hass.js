@@ -14,6 +14,9 @@ const PIPELINE = params.get("pipeline") || "p-casita";
 const NOCASITA = params.get("nocasita") === "1";
 const NOPIPELINES = params.get("nopipelines") === "1";
 const CREATEFAIL = params.get("createfail") === "1";
+const UPDATEFAIL = params.get("updatefail") === "1";
+// HA 2026.11 PIPELINE_FIELDS: all required except prefer_local_intents and acknowledge_media_id
+const PIPELINE_REQUIRED = ["conversation_engine", "conversation_language", "language", "name", "stt_engine", "stt_language", "tts_engine", "tts_language", "tts_voice", "wake_word_entity", "wake_word_id"];
 const FAST = params.get("fast") === "1";
 const nowIso = () => new Date().toISOString();
 
@@ -110,9 +113,9 @@ const entities = {
 
 const PIPELINES = {
   pipelines: [
-    { id: "p-casita", name: "Casita", language: LANG, conversation_engine: "conversation.casita", conversation_language: LANG, prefer_local_intents: false, stt_engine: "stt.faster_whisper", tts_engine: "tts.piper", wake_word_entity: null },
-    { id: "p-atelier", name: "Atelier", language: LANG, conversation_engine: "conversation.casita_atelier", conversation_language: LANG, prefer_local_intents: true, stt_engine: "stt.faster_whisper", tts_engine: "tts.piper", wake_word_entity: null },
-    { id: "p-ha", name: "Home Assistant (sans voix)", language: LANG, conversation_engine: "conversation.home_assistant", conversation_language: LANG, prefer_local_intents: true, stt_engine: "stt.faster_whisper", tts_engine: null, wake_word_entity: null },
+    { id: "p-casita", name: "Casita", language: LANG, conversation_engine: "conversation.casita", conversation_language: LANG, prefer_local_intents: false, stt_engine: "stt.faster_whisper", stt_language: LANG, tts_engine: "tts.piper", tts_language: LANG, tts_voice: null, wake_word_entity: null, wake_word_id: null },
+    { id: "p-atelier", name: "Atelier", language: LANG, conversation_engine: "conversation.casita_atelier", conversation_language: LANG, prefer_local_intents: true, stt_engine: "stt.faster_whisper", stt_language: LANG, tts_engine: "tts.piper", tts_language: LANG, tts_voice: "fr_FR-upmc-medium", wake_word_entity: "wake_word.openwakeword", wake_word_id: "hey_jarvis" },
+    { id: "p-ha", name: "Home Assistant (sans voix)", language: LANG, conversation_engine: "conversation.home_assistant", conversation_language: LANG, prefer_local_intents: true, stt_engine: "stt.faster_whisper", stt_language: LANG, tts_engine: null, tts_language: null, tts_voice: null, wake_word_entity: null, wake_word_id: null },
   ],
   preferred_pipeline: PIPELINE,
 };
@@ -187,6 +190,19 @@ const callWS = async (msg) => {
       if (CREATEFAIL) throw { code: "home_assistant_error", message: "Pipeline creation failed." };
       const { type, id, ...data } = msg;
       return JSON.parse(JSON.stringify(addPipeline(data)));
+    }
+    case "assist_pipeline/pipeline/update": {
+      // HA core: admin only; the whole pipeline is replaced by the fields sent
+      if (!ADMIN) throw { code: "unauthorized", message: "Unauthorized" };
+      if (UPDATEFAIL) throw { code: "home_assistant_error", message: "Pipeline update failed." };
+      const { type, id, pipeline_id, ...data } = msg;
+      const missing = PIPELINE_REQUIRED.filter((k) => !(k in data));
+      const extra = Object.keys(data).filter((k) => !PIPELINE_REQUIRED.includes(k) && k !== "prefer_local_intents");
+      if (missing.length || extra.length) throw { code: "invalid_format", message: `missing ${missing} extra ${extra}` };
+      const i = PIPELINES.pipelines.findIndex((p) => p.id === pipeline_id);
+      if (i < 0) throw { code: "not_found", message: `Unable to find pipeline_id ${pipeline_id}` };
+      PIPELINES.pipelines[i] = { id: pipeline_id, prefer_local_intents: false, ...data };
+      return JSON.parse(JSON.stringify(PIPELINES.pipelines[i]));
     }
     case "conversation/agent/list":
       return {
@@ -459,6 +475,11 @@ window.dev = {
     setStates({});
   },
   strike: () => panel?.strike(),
+  /** An admin changes "Prefer handling commands locally" elsewhere in HA. */
+  setPreferLocal: (id, on) => {
+    const p = PIPELINES.pipelines.find((x) => x.id === id);
+    if (p) p.prefer_local_intents = on;
+  },
   /** An admin created a Casita assistant elsewhere (the panel sees it on its next read). */
   addCasitaPipeline: (name = "Casita") =>
     addPipeline({ name, language: LANG, conversation_engine: "conversation.casita", conversation_language: "*", prefer_local_intents: false, stt_engine: "stt.faster_whisper", stt_language: LANG, tts_engine: "tts.piper", tts_language: LANG, tts_voice: null, wake_word_entity: null, wake_word_id: null }),

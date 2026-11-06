@@ -12,6 +12,7 @@ import {
   CASITA_ENGINE,
   createAssistPipeline,
   listAssistPipelines,
+  updateAssistPipeline,
   listConversationAgents,
   type AssistPipeline,
 } from "./assist/pipeline";
@@ -82,6 +83,10 @@ export class CasitaPanel extends LitElement {
   @state() private _creating = false;
 
   @state() private _createError?: string;
+
+  @state() private _fixing = false;
+
+  @state() private _fixError?: string;
 
   @query(".room", true) private _room!: HTMLElement;
 
@@ -508,6 +513,7 @@ export class CasitaPanel extends LitElement {
     const prevWeather = this._weatherEntity;
     const prevSats = this._satellites.map(([id]) => id);
     this._settings = ev.detail.settings;
+    this._fixError = undefined;
     saveSettings(this.hass, this._settings);
     // the pipeline picks the Casita, so his weather and satellites may change
     for (const id of [prevWeather, this._weatherEntity, ...prevSats]) if (id) delete this._seen.states[id];
@@ -600,6 +606,43 @@ export class CasitaPanel extends LitElement {
     }
   }
 
+  /** Turns "Prefer handling commands locally" off on the selected assistant, the rest unchanged. */
+  private async _fixLocal() {
+    const hass = this.hass;
+    const pipeline = this._pipeline;
+    const S = STRINGS[this._lang];
+    if (!hass || !pipeline || this._fixing) return;
+    this._fixing = true;
+    this._fixError = undefined;
+    try {
+      await updateAssistPipeline(hass, pipeline, { prefer_local_intents: false });
+      const list = this._pipelines;
+      if (list)
+        this._pipelines = { ...list, pipelines: list.pipelines.map((p) => (p.id === pipeline.id ? { ...p, prefer_local_intents: false } : p)) };
+      await this._refreshPipelines();
+    } catch (err: any) {
+      this._fixError = err?.message ? `${S.fixFailed} ${err.message}` : S.fixFailed;
+    } finally {
+      this._fixing = false;
+    }
+  }
+
+  private _renderLocalWarning() {
+    const S = STRINGS[this._lang];
+    const admin = !!this.hass?.user?.is_admin;
+    return html`<div class="empty local" role="note">
+      <p class="empty-text" id="local-text">${S.localWarning}</p>
+      ${admin
+        ? html`<div class="empty-actions">
+            <button type="button" class="empty-btn" aria-describedby="local-text" ?disabled=${this._fixing} @click=${this._fixLocal}>
+              ${this._fixing ? S.fixing : S.fixLocal}
+            </button>
+          </div>`
+        : html`<p class="empty-note">${S.askAdminFix}</p>`}
+      ${this._fixError ? html`<p class="empty-error" role="alert">${this._fixError}</p>` : nothing}
+    </div>`;
+  }
+
   private _renderEmpty() {
     const S = STRINGS[this._lang];
     const admin = !!this.hass?.user?.is_admin;
@@ -675,7 +718,7 @@ export class CasitaPanel extends LitElement {
         <p id="room-help" class="sr-only">${S.stageHelp}</p>
         <div id="sr-speech" class="sr-only" aria-live="polite"></div>
         <div class="bottom">
-          ${this._empty ? this._renderEmpty() : nothing}
+          ${this._empty ? this._renderEmpty() : this._localWarning ? this._renderLocalWarning() : nothing}
           ${this._note ? html`<p class="note" role="status">${this._note}</p>` : nothing}
           <form class="chat" autocomplete="off" @submit=${this._submit}>
             <label for="chat-input" class="sr-only">${S.chatLabel}</label>
@@ -711,6 +754,11 @@ export class CasitaPanel extends LitElement {
         .settings=${this._settings}
         .pipelines=${this._pipelines}
         .warning=${this._localWarning ? S.localWarning : undefined}
+        .warningAction=${this.hass?.user?.is_admin ? (this._fixing ? S.fixing : S.fixLocal) : undefined}
+        .warningNote=${this.hass?.user?.is_admin ? undefined : S.askAdminFix}
+        .warningError=${this._fixError}
+        .warningBusy=${this._fixing}
+        @warning-action=${this._fixLocal}
         .note=${this._pipeline && !this._casitaPipeline ? S.notCasita : undefined}
         .defaultId=${this._defaultPipeline?.id}
         .open=${this._settingsOpen}
