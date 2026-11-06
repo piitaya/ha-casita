@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Casita panel — dev harness</title>
+<style>
+  /* A small subset of the Home Assistant theme variables (default theme, 2025+ light header) */
+  :root {
+    --primary-color: #009ac7; --accent-color: #ff9800; --text-primary-color: #ffffff;
+    --primary-background-color: #fafafa; --secondary-background-color: #e5e5e5;
+    --card-background-color: #ffffff; --primary-text-color: #212121; --secondary-text-color: #727272;
+    --divider-color: rgba(0, 0, 0, 0.12); --error-color: #db4437; --disabled-color: #bdbdbd;
+    --app-header-background-color: #fafafa; --app-header-text-color: #212121;
+    --ha-card-border-radius: 12px; --ha-card-box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    --ha-font-family-body: Roboto, "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --header-height: 56px; --input-fill-color: #f5f5f5;
+  }
+  :root.dark {
+    --primary-background-color: #111111; --secondary-background-color: #282828;
+    --card-background-color: #1c1c1c; --primary-text-color: #e1e1e1; --secondary-text-color: #9b9b9b;
+    --divider-color: rgba(225, 225, 225, 0.12); --app-header-background-color: #111111; --app-header-text-color: #e1e1e1;
+    --input-fill-color: #262626; color-scheme: dark;
+  }
+  html, body { margin: 0; height: 100%; background: var(--primary-background-color); }
+  casita-panel { position: fixed; inset: 0; }
+</style>
+<script>
+  if (new URLSearchParams(location.search).get("dark") === "1") document.documentElement.classList.add("dark");
+  document.documentElement.lang = new URLSearchParams(location.search).get("lang") || "fr";
+</script>
+</head>
+<body>
+<casita-panel></casita-panel>
+<script type="module">
+  // stand-in for HA's ha-menu-button (shown only when narrow, like the real one)
+  class FakeMenuButton extends HTMLElement {
+    set narrow(v) { this._n = v; this.render(); }
+    set hass(v) {}
+    connectedCallback() { this.render(); }
+    render() {
+      this.style.display = this._n ? "inline-flex" : "none";
+      this.innerHTML = this._n ? '<button aria-label="Barre latérale" style="width:48px;height:48px;border:0;border-radius:50%;background:none;color:inherit;display:grid;place-items:center"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z"/></svg></button>' : "";
+    }
+  }
+  customElements.define("ha-menu-button", FakeMenuButton);
+  const { mount } = await import("./fake-hass.js");
+  await import("../../custom_components/casita/frontend/casita-panel.js");
+  mount(document.querySelector("casita-panel"));
+</script>
+</body>
+</html>

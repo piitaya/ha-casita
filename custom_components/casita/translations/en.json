@@ -1,0 +1,286 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Casita answers with the local agent first, then with your LLM agent, and shows an emotion with every reply.",
+        "data": {
+          "llm_agent": "LLM conversation agent",
+          "local_first": "Try local commands first",
+          "ai_task_entity": "AI Task entity",
+          "restyle_local": "Restyle local replies",
+          "restyle_timeout": "Restyle time limit",
+          "emotion_fallback_ai_task": "Pick missing emotions with the AI Task",
+          "extra_personality": "Extra personality",
+          "weather_entity": "Weather entity"
+        },
+        "data_description": {
+          "llm_agent": "Answers what the local agent does not handle. Leave empty to only use local commands.",
+          "local_first": "Handle the commands Home Assistant understands before asking the LLM. Disable \"Prefer handling commands locally\" in the voice assistant using Casita, Casita already does it.",
+          "ai_task_entity": "Used to restyle local replies and to pick missing emotions.",
+          "restyle_local": "Rewrite local replies in the voice of Casita. The original reply is kept if the rewrite loses a number, gets too long or takes too long.",
+          "restyle_timeout": "After this time the local reply is used as is. Use a fast AI Task model without extended thinking.",
+          "emotion_fallback_ai_task": "When the LLM reply has no valid emotion tag, the AI Task picks the emotion.",
+          "extra_personality": "Added to the personality of Casita. For example how it calls you or a running joke.",
+          "weather_entity": "Rain makes Casita a bit less cheerful."
+        }
+      }
+    },
+    "error": {
+      "ai_task_required": "Pick an AI Task entity to restyle replies or pick emotions."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "description": "Casita answers with the local agent first, then with your LLM agent, and shows an emotion with every reply.",
+        "data": {
+          "llm_agent": "LLM conversation agent",
+          "local_first": "Try local commands first",
+          "ai_task_entity": "AI Task entity",
+          "restyle_local": "Restyle local replies",
+          "restyle_timeout": "Restyle time limit",
+          "emotion_fallback_ai_task": "Pick missing emotions with the AI Task",
+          "extra_personality": "Extra personality",
+          "weather_entity": "Weather entity"
+        },
+        "data_description": {
+          "llm_agent": "Answers what the local agent does not handle. Leave empty to only use local commands.",
+          "local_first": "Handle the commands Home Assistant understands before asking the LLM. Disable \"Prefer handling commands locally\" in the voice assistant using Casita, Casita already does it.",
+          "ai_task_entity": "Used to restyle local replies and to pick missing emotions.",
+          "restyle_local": "Rewrite local replies in the voice of Casita. The original reply is kept if the rewrite loses a number, gets too long or takes too long.",
+          "restyle_timeout": "After this time the local reply is used as is. Use a fast AI Task model without extended thinking.",
+          "emotion_fallback_ai_task": "When the LLM reply has no valid emotion tag, the AI Task picks the emotion.",
+          "extra_personality": "Added to the personality of Casita. For example how it calls you or a running joke.",
+          "weather_entity": "Rain makes Casita a bit less cheerful."
+        }
+      }
+    },
+    "error": {
+      "ai_task_required": "Pick an AI Task entity to restyle replies or pick emotions."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "emotion": {
+        "name": "Emotion",
+        "state_attributes": {
+          "source": {
+            "name": "Source",
+            "state": {
+              "local": "Local",
+              "llm": "LLM",
+              "fallback": "Fallback",
+              "manual": "Manual"
+            }
+          },
+          "text": {
+            "name": "Text"
+          },
+          "agent_id": {
+            "name": "Agent"
+          },
+          "conversation_id": {
+            "name": "Conversation ID"
+          },
+          "device_id": {
+            "name": "Device ID"
+          },
+          "updated": {
+            "name": "Updated"
+          },
+          "path": {
+            "name": "Path",
+            "state": {
+              "local": "Local",
+              "llm": "LLM",
+              "local_fallback": "Local fallback"
+            }
+          },
+          "restyle": {
+            "name": "Restyle",
+            "state": {
+              "off": "Off",
+              "applied": "Applied",
+              "rejected_numbers": "Rejected, a number was lost",
+              "rejected_length": "Rejected, too long",
+              "timeout": "Timed out",
+              "error": "Error"
+            }
+          },
+          "timings_ms": {
+            "name": "Timings (ms)"
+          },
+          "local_result": {
+            "name": "Local result"
+          }
+        }
+      },
+      "joy": {
+        "name": "Joy",
+        "state_attributes": {
+          "baseline": {
+            "name": "Baseline"
+          }
+        }
+      },
+      "excitement": {
+        "name": "Excitement",
+        "state_attributes": {
+          "baseline": {
+            "name": "Baseline"
+          }
+        }
+      },
+      "energy": {
+        "name": "Energy",
+        "state_attributes": {
+          "baseline": {
+            "name": "Baseline"
+          }
+        }
+      },
+      "affection": {
+        "name": "Affection",
+        "state_attributes": {
+          "baseline": {
+            "name": "Baseline"
+          }
+        }
+      },
+      "irritation": {
+        "name": "Irritation",
+        "state_attributes": {
+          "baseline": {
+            "name": "Baseline"
+          }
+        }
+      },
+      "curiosity": {
+        "name": "Curiosity",
+        "state_attributes": {
+          "baseline": {
+            "name": "Baseline"
+          }
+        }
+      },
+      "last_path": {
+        "name": "Last path",
+        "state": {
+          "local": "Local",
+          "llm": "LLM",
+          "local_fallback": "Local fallback"
+        }
+      },
+      "last_local_result": {
+        "name": "Last local result",
+        "state": {
+          "matched": "Matched",
+          "no_match": "No match",
+          "filtered": "Left to the LLM",
+          "no_valid_targets": "No valid targets",
+          "other_error": "Other error"
+        },
+        "state_attributes": {
+          "language": {
+            "name": "Language"
+          },
+          "intent": {
+            "name": "Intent"
+          },
+          "slots": {
+            "name": "Slots"
+          },
+          "error_code": {
+            "name": "Error code"
+          }
+        }
+      },
+      "last_restyle": {
+        "name": "Last restyle",
+        "state": {
+          "off": "Off",
+          "applied": "Applied",
+          "rejected_numbers": "Rejected, a number was lost",
+          "rejected_length": "Rejected, too long",
+          "timeout": "Timed out",
+          "error": "Error"
+        }
+      },
+      "last_duration": {
+        "name": "Last reply duration"
+      },
+      "last_local_duration": {
+        "name": "Last local duration"
+      },
+      "last_llm_duration": {
+        "name": "Last LLM duration"
+      },
+      "last_ai_task_duration": {
+        "name": "Last AI Task duration"
+      },
+      "last_original_text": {
+        "name": "Last original text"
+      }
+    }
+  },
+  "selector": {
+    "interaction_kind": {
+      "options": {
+        "pet": "Pet",
+        "poke": "Poke",
+        "tickle": "Tickle",
+        "hug": "Hug",
+        "shake": "Shake",
+        "throw": "Throw",
+        "wake": "Wake up",
+        "greet": "Greet",
+        "ignore": "Ignore"
+      }
+    }
+  },
+  "services": {
+    "interact": {
+      "name": "Interact",
+      "description": "Lets an interaction move the mood of Casita, like in the panel.",
+      "fields": {
+        "kind": {
+          "name": "Kind",
+          "description": "What happens to Casita."
+        },
+        "intensity": {
+          "name": "Intensity",
+          "description": "0.5 is one ordinary interaction, 1 counts double."
+        },
+        "entry_id": {
+          "name": "Casita",
+          "description": "Casita to act on. Without it, or a target, the action applies to every Casita."
+        }
+      }
+    },
+    "set_emotion": {
+      "name": "Set emotion",
+      "description": "Shows an emotion on Casita, like a reply would.",
+      "fields": {
+        "emotion": {
+          "name": "Emotion",
+          "description": "Expression to show."
+        },
+        "entry_id": {
+          "name": "Casita",
+          "description": "Casita to act on. Without it, or a target, the action applies to every Casita."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "Casita {entry_id} is not loaded."
+    },
+    "not_loaded": {
+      "message": "No Casita is loaded."
+    },
+    "not_a_casita": {
+      "message": "The target has no Casita."
+    }
+  }
+}

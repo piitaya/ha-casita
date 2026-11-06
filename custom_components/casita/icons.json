@@ -1,0 +1,59 @@
+{
+  "entity": {
+    "sensor": {
+      "emotion": {
+        "default": "mdi:emoticon-outline"
+      },
+      "joy": {
+        "default": "mdi:emoticon-happy-outline"
+      },
+      "excitement": {
+        "default": "mdi:lightning-bolt-outline"
+      },
+      "energy": {
+        "default": "mdi:battery-heart-variant"
+      },
+      "affection": {
+        "default": "mdi:heart-outline"
+      },
+      "irritation": {
+        "default": "mdi:emoticon-angry-outline"
+      },
+      "curiosity": {
+        "default": "mdi:magnify"
+      },
+      "last_path": {
+        "default": "mdi:source-branch"
+      },
+      "last_local_result": {
+        "default": "mdi:text-search"
+      },
+      "last_restyle": {
+        "default": "mdi:auto-fix"
+      },
+      "last_duration": {
+        "default": "mdi:timer-outline"
+      },
+      "last_local_duration": {
+        "default": "mdi:timer-outline"
+      },
+      "last_llm_duration": {
+        "default": "mdi:timer-outline"
+      },
+      "last_ai_task_duration": {
+        "default": "mdi:timer-outline"
+      },
+      "last_original_text": {
+        "default": "mdi:text"
+      }
+    }
+  },
+  "services": {
+    "interact": {
+      "service": "mdi:hand-back-left-outline"
+    },
+    "set_emotion": {
+      "service": "mdi:emoticon-outline"
+    }
+  }
+}

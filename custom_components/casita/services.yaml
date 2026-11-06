@@ -1,0 +1,81 @@
+interact:
+  target:
+    device:
+      integration: casita
+    entity:
+      integration: casita
+  fields:
+    kind:
+      required: true
+      example: pet
+      selector:
+        select:
+          translation_key: interaction_kind
+          options:
+            - pet
+            - poke
+            - tickle
+            - hug
+            - shake
+            - throw
+            - wake
+            - greet
+            - ignore
+    intensity:
+      default: 0.5
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.05
+          mode: slider
+    entry_id:
+      selector:
+        config_entry:
+          integration: casita
+
+set_emotion:
+  target:
+    device:
+      integration: casita
+    entity:
+      integration: casita
+  fields:
+    emotion:
+      required: true
+      example: Happy
+      selector:
+        select:
+          options:
+            - Normal
+            - Alert
+            - Angry
+            - Scared
+            - Cheeky
+            - DeadAss
+            - Dead
+            - Devious
+            - Focusing
+            - Grateful
+            - Grinning
+            - Happy
+            - Hurt
+            - Initializing
+            - Loading
+            - Loving
+            - NoInternet
+            - Pleading
+            - Problem
+            - Sad
+            - Silly
+            - Sleeping
+            - Smiling
+            - Sweating
+            - UwU
+            - WTF
+            - Winking
+            - WinkingSmile
+    entry_id:
+      selector:
+        config_entry:
+          integration: casita

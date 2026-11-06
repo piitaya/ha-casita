@@ -1,0 +1,16 @@
+# Home Assistant 2026.10.4 and its test helpers
+pytest-homeassistant-custom-component==0.13.375
+# Requirements of conversation and camera (imported by ai_task in 2026.10),
+# not installed by the test helpers
+gazetteer-matcher==1.1.0
+hassil==3.12.1
+home-assistant-intents==2026.10.6
+PyTurboJPEG==1.8.3
+# Requirements of frontend (panel_custom), assist_pipeline, tts and ffmpeg
+# (tests of the panel and of pipelines)
+home-assistant-frontend==20260930.5
+ha-ffmpeg==3.2.2
+mutagen==1.48.1
+pymicro-vad==1.0.1
+pyspeex-noise==1.0.2
+ruff==0.17.4

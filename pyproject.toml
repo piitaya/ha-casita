@@ -1,0 +1,71 @@
+[project]
+name = "casita"
+version = "0.2.3"
+description = "Casita conversation agent for Home Assistant"
+requires-python = ">=3.14.0"
+license = "MIT"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error::RuntimeWarning"]
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+  "A",
+  "ASYNC",
+  "B",
+  "BLE",
+  "C4",
+  "D",
+  "DTZ",
+  "E",
+  "F",
+  "FLY",
+  "G",
+  "I",
+  "LOG",
+  "N",
+  "PERF",
+  "PIE",
+  "PL",
+  "PT",
+  "RET",
+  "RSE",
+  "RUF",
+  "SIM",
+  "SLF",
+  "T20",
+  "TRY",
+  "UP",
+  "W",
+]
+ignore = [
+  "D202",
+  "D203",
+  "D213",
+  "E501",
+  "PLR0911",
+  "PLR0912",
+  "PLR0913",
+  "PLR0917",
+  "PLR2004",
+  "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["SLF001"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["custom_components", "homeassistant", "tests"]
+combine-as-imports = true
+split-on-trailing-comma = false
+
+[tool.ruff.lint.pydocstyle]
+property-decorators = ["propcache.api.cached_property"]

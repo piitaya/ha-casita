@@ -1,0 +1,19 @@
+{
+  "domain": "casita",
+  "name": "Casita",
+  "codeowners": ["@piitaya"],
+  "config_flow": true,
+  "dependencies": [
+    "ai_task",
+    "conversation",
+    "http",
+    "panel_custom",
+    "websocket_api"
+  ],
+  "documentation": "https://github.com/piitaya/ha-casita",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/piitaya/ha-casita/issues",
+  "requirements": [],
+  "version": "0.2.3"
+}
