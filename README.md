@@ -2,6 +2,9 @@
 
 Casita is a little house that lives in your Home Assistant. You talk to him with Assist, he controls your home, and he reacts with real emotions and moods.
 
+> [!NOTE]
+> Casita is a lab project, built with AI. It is not affiliated with the Home Assistant project or the Open Home Foundation.
+
 ![Casita in his panel](docs/images/panel.png)
 
 ## What you get
