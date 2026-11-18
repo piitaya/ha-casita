@@ -1222,6 +1222,205 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     });
   }
 
+  // ------------------------------------------------------------------ device motion (phone, tablet)
+  // The room moves with the screen. Tilt it: Casita leans to keep his balance and slides
+  // downhill. Jolt it: inertia throws him around the room (the fly physics above). Shake
+  // it: he gets dizzy. Drop it: he is scared.
+  const Ltilt = face.layer("tilt", { priority: 56 });
+  const mo: any = {
+    t: 0, vote: 0.3, gx: 0, gy: -9.81, tilt: 0, off: 0, v: 0, levelT: 0, pinnedT: 0,
+    revs: { x: [] as number[], y: [] as number[] }, dir: { x: 0, y: 0 }, shaking: false, strongAt: -9, kickAt: -9, freeT: 0,
+  };
+  const G = 9.81;
+  function screenAngle() {
+    const a = screen.orientation ? screen.orientation.angle : (window as any).orientation;
+    return ((+a || 0) * Math.PI) / 180;
+  }
+  // device axes (x right, y up), turned with the screen, to the room (x right, y down)
+  function toRoom(x: number, y: number): [number, number] {
+    const a = screenAngle(),
+      c = Math.cos(a),
+      s = Math.sin(a),
+      k = mo.vote >= 0 ? 1 : -1;
+    return [(x * c - y * s) * k, -(x * s + y * c) * k];
+  }
+  function onMotion(e: DeviceMotionEvent) {
+    const ig = e.accelerationIncludingGravity;
+    if (!ig || ig.x == null || ig.y == null) return;
+    const now = performance.now() / 1000,
+      dt = clamp(now - (mo.t || now - 0.016), 0.005, 0.1);
+    mo.t = now;
+    // Browsers disagree on the sign. The screen is almost always held top up, so the
+    // sensed "up" along the screen's vertical tells which convention this one uses.
+    const a = screenAngle(),
+      up = ig.x * Math.sin(a) + ig.y * Math.cos(a);
+    if (Math.abs(up) > 6) {
+      const was = mo.vote >= 0;
+      mo.vote = clamp(mo.vote + Math.sign(up) * dt, -1, 1);
+      if (was !== mo.vote >= 0) {
+        mo.gx = -mo.gx;
+        mo.gy = -mo.gy;
+      }
+    }
+    // what the phone does without gravity, when the browser tells
+    const acc = e.acceleration,
+      lin = !!acc && acc.x != null && acc.y != null;
+    const [ux, uy] = toRoom(ig.x - (lin ? acc!.x! : 0), ig.y - (lin ? acc!.y! : 0)); // the floor pushing up
+    const k = 1 - Math.exp(-dt / 0.2);
+    mo.gx += (ux - mo.gx) * k;
+    mo.gy += (uy - mo.gy) * k;
+    mo.tilt = clamp(-mo.gx / G, -1, 1); // > 0: the right side of the screen is lower
+    const [lx, ly] = lin ? toRoom(acc!.x!, acc!.y!) : [ux - mo.gx, uy - mo.gy];
+    // free fall: the sensor feels nothing
+    const g3 = Math.hypot(ig.x, ig.y, ig.z || 0);
+    mo.freeT = g3 < 2.5 ? mo.freeT + dt : 0;
+    if (mo.freeT > 0.12 && !drag.on) {
+      inputSeen("sudden");
+      setAcute("Scared", 1.2);
+      mo.freeT = -1; // once per fall
+    }
+    if (drag.on) return;
+    // shaking: the phone keeps reversing its direction
+    for (const [ax, v] of [["x", lx], ["y", ly]] as const) {
+      if (Math.abs(v) < 14) continue;
+      const d = Math.sign(v);
+      if (d !== mo.dir[ax]) {
+        if (mo.dir[ax]) mo.revs[ax].push(rt);
+        mo.dir[ax] = d;
+      }
+      while (mo.revs[ax].length && rt - mo.revs[ax][0] > 1) mo.revs[ax].shift();
+    }
+    const amag = Math.hypot(lx, ly);
+    if (amag > 14) mo.strongAt = rt;
+    if (!mo.shaking && Math.max(mo.revs.x.length, mo.revs.y.length) >= 4) {
+      mo.shaking = true;
+      inputSeen("sudden");
+      fly.shaken = true;
+    }
+    if (mo.shaking) setAcute("Dead", 99);
+    // a jolt: inertia pushes Casita the other way
+    if (amag > 13 && rt - mo.kickAt > 0.15) {
+      mo.kickAt = rt;
+      motionKick(-lx / amag, -ly / amag, amag);
+    }
+  }
+  function motionKick(fx: number, fy: number, amag: number) {
+    inputSeen("sudden");
+    const v = clamp((amag - 8) * 45, 0, 1300); // world units/s
+    const grounded = !fly.on;
+    // pushed into the floor: only a squash
+    if (RM || (grounded && fy > 0.6)) {
+      face.impulse({ sy: -Math.min(v / 900, 1) * 3 * RMK, sx: Math.min(v / 900, 1) * 1.5 * RMK, x: fx * v * 0.2 * RMK });
+      if (!mo.shaking) setAcute("Alert", 0.6);
+      return;
+    }
+    if (fly.on) {
+      fly.vx += fx * v * 0.6;
+      fly.vy += fy * v * 0.6;
+      fly.vr += fx * v * 0.5;
+      fly.settleT = 0;
+      return;
+    }
+    if (v < 220) {
+      face.impulse({ x: fx * v * 0.4, y: Math.min(0, fy) * v * 0.4 });
+      if (!mo.shaking) setAcute("Alert", 0.6);
+      return;
+    }
+    // off he goes
+    const x = (face.get("body.x") || 0) + mo.off;
+    mo.off = 0;
+    mo.v = 0;
+    Ltilt.clear();
+    Object.assign(fly, { on: true, x, y: face.get("body.y") || 0, vx: fx * v, vy: Math.min(fy, -0.2) * v, rot: face.get("body.rot") || 0, vr: fx * v * 0.9, impacts: 0, hard: 0, shaken: mo.shaking, settleT: 0 });
+    nudge({ V: 0.03, A: 0.3, C: 0.1 });
+    report("throw", clamp(v / 1300, 0.2, 1));
+    if (!mo.shaking) setAcute(v > 900 ? "Scared" : M.V > 0.3 ? "Grinning" : "Alert", 99);
+  }
+  function motionUpdate(dt: number) {
+    // the shake is over
+    if (mo.shaking && rt - mo.strongAt > 0.6) {
+      mo.shaking = false;
+      mo.revs.x.length = 0;
+      mo.revs.y.length = 0;
+      nudge({ V: -0.25, A: 0.4, E: -0.05, F: -0.05, I: 0.35 });
+      report("shake", 0.8);
+      if (!fly.on) {
+        fly.shaken = false;
+        dizzy(rand(2.5, 4));
+      }
+    }
+    if (drag.on || fly.on || !mo.t) {
+      // thrown or held: the tilt offset is folded into his position
+      mo.off = 0;
+      mo.v = 0;
+      Ltilt.clear();
+      return;
+    }
+    const tilt = mo.tilt,
+      at_ = Math.abs(tilt);
+    // static friction holds him up to ~15°, then he slides downhill
+    if (at_ > 0.26) {
+      if (Math.abs(mo.v) < 5) {
+        inputSeen();
+        glanceAtWorld(60 + mo.off + Math.sign(tilt) * 200, 100, 0.8);
+      }
+      mo.v += (tilt - Math.sign(tilt) * 0.2) * 900 * RMK * dt;
+      mo.levelT = 0;
+    } else {
+      mo.v *= Math.exp(-dt * 6);
+      mo.levelT = at_ < 0.12 ? mo.levelT + dt : 0;
+      // level again: he walks back home
+      if (mo.levelT > 1.5) mo.v = lerp(mo.v, -mo.off * 1.4, 1 - Math.exp(-dt * 3));
+    }
+    mo.v *= Math.exp(-dt * 0.8);
+    mo.off += mo.v * dt;
+    const r = roomBox(),
+      lo = Math.min(0, r.L),
+      hi = Math.max(0, r.R - 120);
+    if (mo.off < lo || mo.off > hi) {
+      mo.off = clamp(mo.off, lo, hi);
+      if (Math.abs(mo.v) > 70) {
+        const k = Math.min(Math.abs(mo.v) / 400, 1);
+        face.impulse({ sx: -1.5 * k * RMK, rot: -Math.sign(mo.v) * 60 * k * RMK });
+        setAcute(Math.abs(mo.v) > 300 ? "Hurt" : "Alert", 0.7);
+      }
+      mo.v = 0;
+    }
+    // pinned against a wall by a steep tilt
+    mo.pinnedT = at_ > 0.45 && mo.v === 0 ? mo.pinnedT + dt : 0;
+    if (Math.abs(mo.v) > 40 && !mo.shaking) setAcute(M.V > 0.45 ? "Grinning" : "Scared", 0.4);
+    else if (mo.pinnedT > 1.5 && !mo.shaking) setAcute("Sweating", 0.5);
+    // he leans against the slope to keep his balance
+    const deg = (Math.asin(clamp(tilt, -1, 1)) * 180) / Math.PI;
+    Ltilt.clear();
+    if (mo.off || Math.abs(deg) > 2) Ltilt.add({ "body.x": mo.off, "body.rot": clamp(-deg * 0.3, -10, 10) * RMK });
+  }
+  // iOS asks for permission, from a tap
+  const MotionPerm = (window as any).DeviceMotionEvent as { requestPermission?: () => Promise<string> } | undefined;
+  let motionAsked = false;
+  function askMotion() {
+    if (motionAsked || !MotionPerm || typeof MotionPerm.requestPermission !== "function") return;
+    motionAsked = true;
+    try {
+      if (localStorage.getItem("casita.motion") === "denied") return;
+    } catch {
+      /* storage unavailable */
+    }
+    MotionPerm.requestPermission()
+      .then((state) => {
+        if (state !== "granted") {
+          try {
+            localStorage.setItem("casita.motion", "denied");
+          } catch {
+            /* storage unavailable */
+          }
+        }
+      })
+      .catch(() => {
+        /* not from a gesture, or not supported */
+      });
+  }
+
   // ------------------------------------------------------------------ signature loops (life inside each state)
   function every(st: any, key: string, a: number, b: number, fn: () => void) {
     const k = "n_" + key;
@@ -2748,6 +2947,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
   }
   function onDown(e: PointerEvent) {
     if (e.button != null && e.button > 0) return;
+    if (e.pointerType === "touch") askMotion();
     cacheRect();
     const [wx, wy] = clientToWorld(e.clientX, e.clientY);
     P.wx = wx;
@@ -3258,6 +3458,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     shyUpdate();
     dragUpdate();
     flyUpdate(dt);
+    motionUpdate(dt);
     weatherFxUpdate();
     gazeUpdate();
     missUpdate();
@@ -3317,6 +3518,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
   document.addEventListener("mouseout", onDocLeave);
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("scroll", cacheRect, docOpts);
+  window.addEventListener("devicemotion", onMotion, docOpts);
 
   readTokens();
   layout();
@@ -3348,6 +3550,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
       document.removeEventListener("mouseout", onDocLeave);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("scroll", cacheRect);
+      window.removeEventListener("devicemotion", onMotion);
     },
     layout() {
       layout();
@@ -3438,6 +3641,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     debug() {
       return {
         expression: shown, source: ctl.source, phase: conv.phase, talk: talk.on ? { kind: talk.kind, mode: talk.mode, text: talk.text, rev: talk.rev } : null,
+        motion: { tilt: +mo.tilt.toFixed(2), off: Math.round(mo.off), shaking: mo.shaking, flying: fly.on },
         mood: { ...M }, backend, delta: { ...D }, weather: condition, dayPhase: phase, weatherFx: wx.kind, glance: rt < gaze.glanceUntil ? { x: gaze.gx, y: gaze.gy, top: view.y0, height: view.h } : null, bodyColor: face.bodyColor, asleep: M.asleep, act: Dir.name, reaction: R.name, auto,
       };
     },
