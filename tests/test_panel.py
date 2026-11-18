@@ -1,6 +1,7 @@
 """Tests for the panel of Casita."""
 
 from collections.abc import Iterator
+import hashlib
 from http import HTTPStatus
 import json
 from pathlib import Path
@@ -15,6 +16,7 @@ from homeassistant.components.frontend import DATA_PANELS
 from homeassistant.core import HomeAssistant
 
 MODULE = "export class CasitaPanel extends HTMLElement {}\n"
+MODULE_HASH = hashlib.sha256(MODULE.encode()).hexdigest()[:8]
 VERSION = json.loads(
     (Path(__file__).parents[1] / "custom_components/casita/manifest.json").read_text()
 )["version"]
@@ -55,12 +57,12 @@ async def test_panel(hass: HomeAssistant, hass_client: ClientSessionGenerator) -
             "embed_iframe": False,
             "trust_external": False,
             "handle_safe_area": True,
-            "module_url": f"/casita_static/casita-panel.js?v={VERSION}",
+            "module_url": f"/casita_static/casita-panel.js?v={VERSION}-{MODULE_HASH}",
         },
     }
 
     client = await hass_client()
-    response = await client.get(f"/casita_static/casita-panel.js?v={VERSION}")
+    response = await client.get(f"/casita_static/casita-panel.js?v={VERSION}-{MODULE_HASH}")
     assert response.status == HTTPStatus.OK
     assert await response.text() == MODULE
     assert "max-age" in response.headers["Cache-Control"]

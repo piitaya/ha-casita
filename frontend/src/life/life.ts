@@ -1245,6 +1245,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     return [(x * c - y * s) * k, -(x * s + y * c) * k];
   }
   function onMotion(e: DeviceMotionEvent) {
+    motionEvents++;
     const ig = e.accelerationIncludingGravity;
     if (!ig || ig.x == null || ig.y == null) return;
     const now = performance.now() / 1000,
@@ -1395,29 +1396,21 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     Ltilt.clear();
     if (mo.off || Math.abs(deg) > 2) Ltilt.add({ "body.x": mo.off, "body.rot": clamp(-deg * 0.3, -10, 10) * RMK });
   }
-  // iOS asks for permission, from a tap
+  // iOS asks for permission, from a gesture. WebKit only counts the end of a touch
+  // (touchend, pointerup, click) as one, not pointerdown.
   const MotionPerm = (window as any).DeviceMotionEvent as { requestPermission?: () => Promise<string> } | undefined;
-  let motionAsked = false;
+  const needsPerm = !!MotionPerm && typeof MotionPerm.requestPermission === "function";
+  let motionPerm: "unknown" | "asking" | "granted" | "denied" | "error" = needsPerm ? "unknown" : "granted";
+  let motionEvents = 0;
   function askMotion() {
-    if (motionAsked || !MotionPerm || typeof MotionPerm.requestPermission !== "function") return;
-    motionAsked = true;
-    try {
-      if (localStorage.getItem("casita.motion") === "denied") return;
-    } catch {
-      /* storage unavailable */
-    }
-    MotionPerm.requestPermission()
+    if (!needsPerm || mo.t || motionPerm === "asking" || motionPerm === "granted" || motionPerm === "denied") return;
+    motionPerm = "asking";
+    MotionPerm!.requestPermission!()
       .then((state) => {
-        if (state !== "granted") {
-          try {
-            localStorage.setItem("casita.motion", "denied");
-          } catch {
-            /* storage unavailable */
-          }
-        }
+        motionPerm = state === "granted" ? "granted" : "denied";
       })
       .catch(() => {
-        /* not from a gesture, or not supported */
+        motionPerm = "error"; // not counted as a gesture: try again on the next touch
       });
   }
 
@@ -2947,7 +2940,6 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
   }
   function onDown(e: PointerEvent) {
     if (e.button != null && e.button > 0) return;
-    if (e.pointerType === "touch") askMotion();
     cacheRect();
     const [wx, wy] = clientToWorld(e.clientX, e.clientY);
     P.wx = wx;
@@ -3519,6 +3511,8 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("scroll", cacheRect, docOpts);
   window.addEventListener("devicemotion", onMotion, docOpts);
+  stage.addEventListener("touchend", askMotion, docOpts);
+  stage.addEventListener("click", askMotion);
 
   readTokens();
   layout();
@@ -3551,6 +3545,8 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("scroll", cacheRect);
       window.removeEventListener("devicemotion", onMotion);
+      stage.removeEventListener("touchend", askMotion);
+      stage.removeEventListener("click", askMotion);
     },
     layout() {
       layout();
@@ -3641,7 +3637,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     debug() {
       return {
         expression: shown, source: ctl.source, phase: conv.phase, talk: talk.on ? { kind: talk.kind, mode: talk.mode, text: talk.text, rev: talk.rev } : null,
-        motion: { tilt: +mo.tilt.toFixed(2), off: Math.round(mo.off), shaking: mo.shaking, flying: fly.on },
+        motion: { secure: window.isSecureContext, permission: motionPerm, events: motionEvents, sign: mo.vote >= 0 ? 1 : -1, tilt: +mo.tilt.toFixed(2), off: Math.round(mo.off), shaking: mo.shaking, flying: fly.on },
         mood: { ...M }, backend, delta: { ...D }, weather: condition, dayPhase: phase, weatherFx: wx.kind, glance: rt < gaze.glanceUntil ? { x: gaze.gx, y: gaze.gy, top: view.y0, height: view.h } : null, bodyColor: face.bodyColor, asleep: M.asleep, act: Dir.name, reaction: R.name, auto,
       };
     },

@@ -1,5 +1,6 @@
 """Casita panel in the sidebar."""
 
+import hashlib
 from pathlib import Path
 from typing import Final
 
@@ -47,18 +48,30 @@ async def async_register_static_path(hass: HomeAssistant) -> None:
     await hass.http.async_register_static_paths([config])
 
 
+def _module_hash() -> str | None:
+    """Return a short hash of the bundle, or None without it."""
+    try:
+        return hashlib.sha256((FRONTEND_DIR / PANEL_MODULE).read_bytes()).hexdigest()[:8]
+    except OSError:
+        return None
+
+
 async def async_register_panel(hass: HomeAssistant, entry: CasitaConfigEntry) -> None:
     """Show the panel for an entry, unless it shows another one."""
     if DATA_PANEL_ENTRY in hass.data:
         return
     version = entry.runtime_data.version
+    # The file is cached for a month: a new bundle with the same version
+    # (a reinstall, a branch) needs a new URL
+    digest = await hass.async_add_executor_job(_module_hash)
+    tag = f"{version}-{digest}" if digest else version
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL_PATH,
         webcomponent_name=PANEL_WEBCOMPONENT,
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
-        module_url=f"{PANEL_STATIC_URL}/{PANEL_MODULE}?v={version}",
+        module_url=f"{PANEL_STATIC_URL}/{PANEL_MODULE}?v={tag}",
         embed_iframe=False,
         require_admin=False,
         config={"entry_id": entry.entry_id, "version": version},
