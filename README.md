@@ -10,7 +10,7 @@ Casita is a little house that lives in your Home Assistant. You talk to him with
 
 ## What you get
 
-- **A Casita panel** in the sidebar. Casita lives there: talk to him by text or voice, pet him, poke him, toss him around. When nobody plays with him, he gets bored and falls asleep.
+- **A Casita panel** in the sidebar. Casita lives there: talk to him by text or voice, pet him, poke him, toss him around. On a phone or a tablet, tilt or shake the screen and he slides, flies and gets dizzy. When nobody plays with him, he gets bored and falls asleep.
 - **A conversation agent** for Assist. It is a wrapper: it sits on top of your own conversation agent and adds Casita's personality, an emotion on every reply and a mood.
 - **Sensors** for his emotion and his mood, to use in your automations.
 
