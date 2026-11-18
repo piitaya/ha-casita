@@ -963,7 +963,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
   const shy: any = { since: null, on: false, t0: 0, until: 0, cool: 0, id: null };
   function shyBlocked() {
     return (
-      !P.inside || P.press || !P.hoverHouse || P.type !== "mouse" || pet.on || tickle.on || hug || drag.on || fly.on ||
+      !P.inside || P.press || !P.hoverHouse || P.type !== "mouse" || pet.on || tickle.on || hug || drag.on || airborne() ||
       R.name || (ctl.acute && ctl.acute.tag !== "shy") || ctl.system || M.I > 0.3 || M.asleep || shown === "Angry" || shown === "Sleeping"
     );
   }
@@ -1052,6 +1052,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
   function dragStart(wx: number, wy: number) {
     inputSeen("sudden");
     fly.on = false;
+    if (phys.live) physGive();
     Object.assign(drag, { on: true, bx0: face.get("body.x") || 0, by0: face.get("body.y") || 0, wx0: wx, wy0: wy, vx: 0, vy: 0, revs: [], shaken: false, lastDir: 0, t0: rt, tx: null, ty: null });
     face.spring("body.x", { k: 260, c: 22 });
     face.spring("body.y", { k: 260, c: 22 });
@@ -1104,6 +1105,17 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     if (shaken) {
       nudge({ V: -0.25, A: 0.4, E: -0.05, F: -0.05, I: 0.35 });
       report("shake", 0.8);
+    }
+    if (phys.live) {
+      // with an accelerometer he is let go in the room, and falls where things fall now
+      physTake(vx, vy, vx * 0.006);
+      Object.assign(phys, { shaken, lively: true, thrownAt: rt });
+      if (!shaken && Math.hypot(vx, vy) > 60 / s) {
+        nudge({ V: 0.05, A: 0.3, E: -0.02, C: 0.1 });
+        report("throw", clamp(Math.hypot(drag.vx, drag.vy) / 3000, 0.2, 1));
+      }
+      setAcute(shaken ? "Dead" : "Alert", shaken ? 99 : 0.3);
+      return;
     }
     if (RM || Math.hypot(vx, vy) < 60 / s) {
       Ldrag.clear();
@@ -1223,15 +1235,23 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
   }
 
   // ------------------------------------------------------------------ device motion (phone, tablet)
-  // The room moves with the screen. Tilt it: Casita leans to keep his balance and slides
-  // downhill. Jolt it: inertia throws him around the room (the fly physics above). Shake
-  // it: he gets dizzy. Drop it: he is scared.
-  const Ltilt = face.layer("tilt", { priority: 56 });
-  const mo: any = {
-    t: 0, vote: 0.3, gx: 0, gy: -9.81, tilt: 0, off: 0, v: 0, levelT: 0, pinnedT: 0,
-    revs: { x: [] as number[], y: [] as number[] }, dir: { x: 0, y: 0 }, shaking: false, strongAt: -9, kickAt: -9, freeT: 0,
-  };
+  // With an accelerometer, the room is a real box and Casita a rigid body in it. What the
+  // sensor feels (gravity and the moves of the phone, together) is the force on him: tilt
+  // the screen and he slides, turn it and he tumbles to the wall that is now the floor,
+  // jerk it and inertia throws him, lay it flat and the back of the room holds him.
+  // He is alive, not a brick: like a cat, he gets back on his feet, feet toward the real
+  // ground, unless he is knocked out or asleep. At rest, the simulation sleeps and the
+  // usual animations go on, on top of where he landed.
   const G = 9.81;
+  const GW = 1800; // 1 g, in room units/s² (the house is 120 wide)
+  const mo: any = {
+    t: 0, vote: 0.3, gx: 0, gy: -G, ax: 0, ay: G, az: 0,
+    revs: { x: [] as number[], y: [] as number[] }, dir: { x: 0, y: 0 }, shaking: false, strongAt: -9, freeT: 0,
+  };
+  // Safari gives the opposite of what the specification says, on every axis
+  const UA = navigator.userAgent || "";
+  const IOS = /iPad|iPhone|iPod/.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const motionSign = () => (IOS ? -1 : /Android/.test(UA) ? 1 : mo.vote >= 0 ? 1 : -1);
   function screenAngle() {
     const a = screen.orientation ? screen.orientation.angle : (window as any).orientation;
     return ((+a || 0) * Math.PI) / 180;
@@ -1241,9 +1261,10 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     const a = screenAngle(),
       c = Math.cos(a),
       s = Math.sin(a),
-      k = mo.vote >= 0 ? 1 : -1;
+      k = motionSign();
     return [(x * c - y * s) * k, -(x * s + y * c) * k];
   }
+  let motionEvents = 0;
   function onMotion(e: DeviceMotionEvent) {
     motionEvents++;
     const ig = e.accelerationIncludingGravity;
@@ -1251,10 +1272,11 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     const now = performance.now() / 1000,
       dt = clamp(now - (mo.t || now - 0.016), 0.005, 0.1);
     mo.t = now;
-    // Browsers disagree on the sign. The screen is almost always held top up, so the
-    // sensed "up" along the screen's vertical tells which convention this one uses.
+    const z = ig.z || 0;
+    // Unknown browser: someone who looks at the screen holds it top up or face up, so
+    // the sensed "up" tells which sign convention this one uses.
     const a = screenAngle(),
-      up = ig.x * Math.sin(a) + ig.y * Math.cos(a);
+      up = ig.x * Math.sin(a) + ig.y * Math.cos(a) + z;
     if (Math.abs(up) > 6) {
       const was = mo.vote >= 0;
       mo.vote = clamp(mo.vote + Math.sign(up) * dt, -1, 1);
@@ -1263,17 +1285,22 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
         mo.gy = -mo.gy;
       }
     }
-    // what the phone does without gravity, when the browser tells
+    // u: the floor pushing up. What a body in the room feels is the opposite.
+    const [ux, uy] = toRoom(ig.x, ig.y);
+    const kf = 1 - Math.exp(-dt / 0.025);
+    mo.ax += (-ux - mo.ax) * kf;
+    mo.ay += (-uy - mo.ay) * kf;
+    mo.az += (Math.abs(z) - mo.az) * kf;
+    // gravity alone, slow, to tell the moves of the phone from its tilt
     const acc = e.acceleration,
       lin = !!acc && acc.x != null && acc.y != null;
-    const [ux, uy] = toRoom(ig.x - (lin ? acc!.x! : 0), ig.y - (lin ? acc!.y! : 0)); // the floor pushing up
-    const k = 1 - Math.exp(-dt / 0.2);
-    mo.gx += (ux - mo.gx) * k;
-    mo.gy += (uy - mo.gy) * k;
-    mo.tilt = clamp(-mo.gx / G, -1, 1); // > 0: the right side of the screen is lower
+    const [sx, sy] = lin ? toRoom(ig.x - acc!.x!, ig.y - acc!.y!) : [ux, uy];
+    const kg = 1 - Math.exp(-dt / 0.2);
+    mo.gx += (sx - mo.gx) * kg;
+    mo.gy += (sy - mo.gy) * kg;
     const [lx, ly] = lin ? toRoom(acc!.x!, acc!.y!) : [ux - mo.gx, uy - mo.gy];
     // free fall: the sensor feels nothing
-    const g3 = Math.hypot(ig.x, ig.y, ig.z || 0);
+    const g3 = Math.hypot(ig.x, ig.y, z);
     mo.freeT = g3 < 2.5 ? mo.freeT + dt : 0;
     if (mo.freeT > 0.12 && !drag.on) {
       inputSeen("sudden");
@@ -1282,62 +1309,223 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     }
     if (drag.on) return;
     // shaking: the phone keeps reversing its direction
-    for (const [ax, v] of [["x", lx], ["y", ly]] as const) {
+    for (const [axis, v] of [["x", lx], ["y", ly]] as const) {
       if (Math.abs(v) < 14) continue;
       const d = Math.sign(v);
-      if (d !== mo.dir[ax]) {
-        if (mo.dir[ax]) mo.revs[ax].push(rt);
-        mo.dir[ax] = d;
+      if (d !== mo.dir[axis]) {
+        if (mo.dir[axis]) mo.revs[axis].push(rt);
+        mo.dir[axis] = d;
       }
-      while (mo.revs[ax].length && rt - mo.revs[ax][0] > 1) mo.revs[ax].shift();
+      while (mo.revs[axis].length && rt - mo.revs[axis][0] > 1) mo.revs[axis].shift();
     }
     const amag = Math.hypot(lx, ly);
     if (amag > 14) mo.strongAt = rt;
+    if (amag > 9) inputSeen("sudden");
     if (!mo.shaking && Math.max(mo.revs.x.length, mo.revs.y.length) >= 4) {
       mo.shaking = true;
       inputSeen("sudden");
-      fly.shaken = true;
     }
     if (mo.shaking) setAcute("Dead", 99);
-    // a jolt: inertia pushes Casita the other way
-    if (amag > 13 && rt - mo.kickAt > 0.15) {
-      mo.kickAt = rt;
-      motionKick(-lx / amag, -ly / amag, amag);
-    }
   }
-  function motionKick(fx: number, fy: number, amag: number) {
-    inputSeen("sudden");
-    const v = clamp((amag - 8) * 45, 0, 1300); // world units/s
-    const grounded = !fly.on;
-    // pushed into the floor: only a squash
-    if (RM || (grounded && fy > 0.6)) {
-      face.impulse({ sy: -Math.min(v / 900, 1) * 3 * RMK, sx: Math.min(v / 900, 1) * 1.5 * RMK, x: fx * v * 0.2 * RMK });
-      if (!mo.shaking) setAcute("Alert", 0.6);
-      return;
+
+  // --- the body: the silhouette, around its centre of mass
+  const Lphys = face.layer("phys", { priority: 57, post: true });
+  const body = (() => {
+    // centroid and moment of inertia of the polygon (mass 1)
+    let A = 0,
+      cx = 0,
+      cy = 0;
+    for (let i = 0; i < SIL.length; i++) {
+      const [x0, y0] = SIL[i],
+        [x1, y1] = SIL[(i + 1) % SIL.length],
+        c = x0 * y1 - x1 * y0;
+      A += c;
+      cx += (x0 + x1) * c;
+      cy += (y0 + y1) * c;
     }
-    if (fly.on) {
-      fly.vx += fx * v * 0.6;
-      fly.vy += fy * v * 0.6;
-      fly.vr += fx * v * 0.5;
-      fly.settleT = 0;
-      return;
+    cx /= 3 * A;
+    cy /= 3 * A;
+    const pts = SIL.map(([x, y]) => [x - cx, y - cy] as [number, number]);
+    let num = 0,
+      den = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [x0, y0] = pts[i],
+        [x1, y1] = pts[(i + 1) % pts.length],
+        c = Math.abs(x0 * y1 - x1 * y0);
+      num += c * (x0 * x0 + x0 * x1 + x1 * x1 + y0 * y0 + y0 * y1 + y1 * y1);
+      den += c;
     }
-    if (v < 220) {
-      face.impulse({ x: fx * v * 0.4, y: Math.min(0, fy) * v * 0.4 });
-      if (!mo.shaking) setAcute("Alert", 0.6);
-      return;
-    }
-    // off he goes
-    const x = (face.get("body.x") || 0) + mo.off;
-    mo.off = 0;
-    mo.v = 0;
-    Ltilt.clear();
-    Object.assign(fly, { on: true, x, y: face.get("body.y") || 0, vx: fx * v, vy: Math.min(fy, -0.2) * v, rot: face.get("body.rot") || 0, vr: fx * v * 0.9, impacts: 0, hard: 0, shaken: mo.shaking, settleT: 0 });
-    nudge({ V: 0.03, A: 0.3, C: 0.1 });
-    report("throw", clamp(v / 1300, 0.2, 1));
-    if (!mo.shaking) setAcute(v > 900 ? "Scared" : M.V > 0.3 ? "Grinning" : "Alert", 99);
+    return { pts, cx, cy, hc: 116.88 - cy, I: num / (6 * den) };
+  })();
+  const MU = 0.3, // floor, walls, ceiling
+    MU_BACK = 0.15, // back of the room, when the screen lies flat
+    BOUNCE = 0.35;
+  const phys: any = {
+    live: false, sleep: true, x: body.cx, y: body.cy, th: 0, vx: 0, vy: 0, w: 0,
+    touch: 0, airT: 0, restT: 0, levelT: 0, sa: [0, GW], box: "", err: 0, side: 0,
+    hard: 0, hardAt: -9, hitAt: -9, thrownAt: -9, hopAt: -9, walking: false, lively: false, shaken: false, upT: 0,
+  };
+  const wrapPi = (a: number) => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+  const knocked = () => mo.shaking || shown === "Dead" || shown === "Hurt" || M.asleep || shown === "Sleeping";
+  /** Thrown, falling or sliding fast: the body is busy with physics. */
+  const airborne = () => fly.on || (phys.live && !phys.sleep && (phys.airT > 0.1 || Math.hypot(phys.vx, phys.vy) > 60));
+  function physPose(): [number, number, number] {
+    const s = Math.sin(phys.th),
+      c = Math.cos(phys.th);
+    // the pivot of the body is the middle of its base
+    return [phys.x - s * body.hc - 60, phys.y + c * body.hc - 116.88, (phys.th * 180) / Math.PI];
   }
-  function motionUpdate(dt: number) {
+  /** The simulation takes the body where it is shown now, with a speed (released, sensor back). */
+  function physTake(vx: number, vy: number, w: number) {
+    const bx = face.get("body.x") || 0,
+      by = face.get("body.y") || 0,
+      th = ((face.get("body.rot") || 0) * Math.PI) / 180;
+    Object.assign(phys, { th, x: 60 + bx + Math.sin(th) * body.hc, y: 116.88 + by - Math.cos(th) * body.hc, vx, vy, w, sleep: false, restT: 0, airT: 0 });
+    for (const k of ["body.x", "body.y", "body.rot"]) face.setState(k, 0, 0);
+    face.spring("body.x", null);
+    face.spring("body.y", null);
+    cancel("home");
+    Ldrag.clear();
+    face.lookAt(null);
+  }
+  /** The springs take the body back (grabbed, sensor lost). */
+  function physGive() {
+    // what is shown now becomes the state of the springs
+    face.setState("body.x", face.get("body.x") || 0, phys.vx);
+    face.setState("body.y", face.get("body.y") || 0, phys.vy);
+    face.setState("body.rot", face.get("body.rot") || 0, 0);
+    Object.assign(phys, { x: body.cx, y: body.cy, th: 0, vx: 0, vy: 0, w: 0, sleep: true, touch: 0, airT: 0, restT: 0 });
+    Lphys.clear();
+  }
+  function physImpact(v: number, nx: number, ny: number) {
+    const vpx = v * view.s;
+    if (vpx < 260 || rt - phys.hitAt < 0.08) return;
+    phys.hitAt = rt;
+    // squash along the wall's normal, in the axes of the body
+    const s = Math.sin(phys.th),
+      c = Math.cos(phys.th),
+      k = Math.min(vpx / 4000, 0.14);
+    if (Math.abs(-nx * s + ny * c) > Math.abs(nx * c + ny * s)) face.impulse({ sy: -k * 30, sx: k * 15 });
+    else face.impulse({ sx: -k * 22, sy: k * 12 });
+    if (vpx > 1400) {
+      inputSeen("sudden");
+      if (rt - phys.hardAt > 6) phys.hard = 0;
+      phys.hardAt = rt;
+      phys.hard++;
+      if (phys.hard >= 2) {
+        if (!mo.shaking) setAcute("Hurt", 1.2);
+        nudge({ V: -0.25, A: 0.4, I: 0.35 });
+        if (phys.hard === 2) report("shake", 0.5);
+        want.bandage = 1;
+        after(4, () => {
+          want.bandage = 0;
+        });
+      }
+    } else if (vpx > 700 && !mo.shaking && !M.asleep) setAcute("Alert", 0.6);
+  }
+  const contacts: any[] = [];
+  function physStep(h: number, ax: number, ay: number, back: number, muscle: number, damp: number, target: number, r: { L: number; R: number; T: number; F: number }) {
+    // forces
+    phys.vx += ax * h;
+    phys.vy += ay * h;
+    if (muscle) phys.w += (muscle * wrapPi(target - phys.th) - damp * phys.w) * h;
+    const air = Math.exp(-h * 0.25);
+    phys.vx *= air;
+    phys.vy *= air;
+    phys.w *= Math.exp(-h * 0.8);
+    // the back of the room rubs: it holds him when the screen lies flat
+    if (back > 0) {
+      const sp = Math.hypot(phys.vx, phys.vy),
+        cut = MU_BACK * back * h;
+      if (sp <= cut) phys.vx = phys.vy = 0;
+      else {
+        phys.vx -= (phys.vx / sp) * cut;
+        phys.vy -= (phys.vy / sp) * cut;
+      }
+      const cw = cut * 0.018;
+      phys.w = Math.abs(phys.w) <= cw ? 0 : phys.w - Math.sign(phys.w) * cw;
+    }
+    // contacts: each corner against the four sides
+    const s = Math.sin(phys.th),
+      c = Math.cos(phys.th),
+      SLOP = 0.4;
+    contacts.length = 0;
+    for (const [lx, ly] of body.pts) {
+      const rx = lx * c - ly * s,
+        ry = lx * s + ly * c,
+        wx = phys.x + rx,
+        wy = phys.y + ry;
+      if (wx < r.L + SLOP) contacts.push({ rx, ry, nx: 1, ny: 0 });
+      if (wx > r.R - SLOP) contacts.push({ rx, ry, nx: -1, ny: 0 });
+      if (wy < r.T + SLOP) contacts.push({ rx, ry, nx: 0, ny: 1 });
+      if (wy > r.F - SLOP) contacts.push({ rx, ry, nx: 0, ny: -1 });
+    }
+    let hit = 0,
+      hnx = 0,
+      hny = 0;
+    for (const k of contacts) {
+      const vn = (phys.vx - phys.w * k.ry) * k.nx + (phys.vy + phys.w * k.rx) * k.ny;
+      k.jn = 0;
+      k.jt = 0;
+      k.bias = vn < -70 ? -BOUNCE * vn : 0;
+      if (-vn > hit) {
+        hit = -vn;
+        hnx = k.nx;
+        hny = k.ny;
+      }
+    }
+    for (let it = 0; it < 10; it++) {
+      for (const k of contacts) {
+        // along the normal: no going through, a bounce when fast
+        const rn = k.rx * k.ny - k.ry * k.nx;
+        const vn = (phys.vx - phys.w * k.ry) * k.nx + (phys.vy + phys.w * k.rx) * k.ny;
+        const jn = Math.max(0, k.jn + (k.bias - vn) / (1 + (rn * rn) / body.I)),
+          dn = jn - k.jn;
+        k.jn = jn;
+        phys.vx += dn * k.nx;
+        phys.vy += dn * k.ny;
+        phys.w += (dn * rn) / body.I;
+        // along the side: friction
+        const tx = -k.ny,
+          ty = k.nx,
+          rtn = k.rx * ty - k.ry * tx;
+        const vt = (phys.vx - phys.w * k.ry) * tx + (phys.vy + phys.w * k.rx) * ty;
+        const jt = clamp(k.jt - vt / (1 + (rtn * rtn) / body.I), -MU * k.jn, MU * k.jn),
+          dtn = jt - k.jt;
+        k.jt = jt;
+        phys.vx += dtn * tx;
+        phys.vy += dtn * ty;
+        phys.w += (dtn * rtn) / body.I;
+      }
+    }
+    let touch = 0;
+    for (const k of contacts) if (k.jn > 0) touch |= k.nx > 0 ? 1 : k.nx < 0 ? 2 : k.ny > 0 ? 4 : 8;
+    phys.touch |= touch;
+    if (hit > 0) physImpact(hit, hnx, hny);
+    // move, then push back what went through
+    phys.x += phys.vx * h;
+    phys.y += phys.vy * h;
+    phys.th += phys.w * h;
+    const s2 = Math.sin(phys.th),
+      c2 = Math.cos(phys.th);
+    let x0 = Infinity,
+      x1 = -Infinity,
+      y0 = Infinity,
+      y1 = -Infinity;
+    for (const [lx, ly] of body.pts) {
+      const wx = phys.x + lx * c2 - ly * s2,
+        wy = phys.y + lx * s2 + ly * c2;
+      if (wx < x0) x0 = wx;
+      if (wx > x1) x1 = wx;
+      if (wy < y0) y0 = wy;
+      if (wy > y1) y1 = wy;
+    }
+    if (x0 < r.L) phys.x += r.L - x0;
+    else if (x1 > r.R) phys.x -= x1 - r.R;
+    if (y1 > r.F) phys.y -= y1 - r.F;
+    else if (y0 < r.T) phys.y += r.T - y0;
+  }
+  function physUpdate(dt: number) {
     // the shake is over
     if (mo.shaking && rt - mo.strongAt > 0.6) {
       mo.shaking = false;
@@ -1345,63 +1533,149 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
       mo.revs.y.length = 0;
       nudge({ V: -0.25, A: 0.4, E: -0.05, F: -0.05, I: 0.35 });
       report("shake", 0.8);
-      if (!fly.on) {
-        fly.shaken = false;
-        dizzy(rand(2.5, 4));
+      phys.shaken = false;
+      dizzy(rand(2.5, 4));
+    }
+    const live = !RM && !!mo.t && performance.now() / 1000 - mo.t < 1;
+    if (live !== phys.live) {
+      phys.live = live;
+      if (live) {
+        if (!drag.on) {
+          fly.on = false;
+          physTake(0, 0, 0);
+        }
+      } else if (!drag.on) {
+        physGive();
+        goHome();
       }
     }
-    if (drag.on || fly.on || !mo.t) {
-      // thrown or held: the tilt offset is folded into his position
-      mo.off = 0;
-      mo.v = 0;
-      Ltilt.clear();
+    if (!live) return;
+    if (drag.on) {
+      phys.sleep = true;
+      Lphys.clear();
       return;
     }
-    const tilt = mo.tilt,
-      at_ = Math.abs(tilt);
-    // static friction holds him up to ~15°, then he slides downhill
-    if (at_ > 0.26) {
-      if (Math.abs(mo.v) < 5) {
-        inputSeen();
-        glanceAtWorld(60 + mo.off + Math.sign(tilt) * 200, 100, 0.8);
-      }
-      mo.v += (tilt - Math.sign(tilt) * 0.2) * 900 * RMK * dt;
-      mo.levelT = 0;
-    } else {
-      mo.v *= Math.exp(-dt * 6);
-      mo.levelT = at_ < 0.12 ? mo.levelT + dt : 0;
-      // level again: he walks back home
-      if (mo.levelT > 1.5) mo.v = lerp(mo.v, -mo.off * 1.4, 1 - Math.exp(-dt * 3));
+    const K = GW / G;
+    let ax = mo.ax * K,
+      ay = mo.ay * K;
+    const am = Math.hypot(ax, ay);
+    if (am > 5 * GW) {
+      ax *= (5 * GW) / am;
+      ay *= (5 * GW) / am;
     }
-    mo.v *= Math.exp(-dt * 0.8);
-    mo.off += mo.v * dt;
+    const back = mo.az * K;
     const r = roomBox(),
-      lo = Math.min(0, r.L),
-      hi = Math.max(0, r.R - 120);
-    if (mo.off < lo || mo.off > hi) {
-      mo.off = clamp(mo.off, lo, hi);
-      if (Math.abs(mo.v) > 70) {
-        const k = Math.min(Math.abs(mo.v) / 400, 1);
-        face.impulse({ sx: -1.5 * k * RMK, rot: -Math.sign(mo.v) * 60 * k * RMK });
-        setAcute(Math.abs(mo.v) > 300 ? "Hurt" : "Alert", 0.7);
+      box = [r.L, r.R, r.T, r.F].map((v) => v.toFixed(1)).join();
+    // "down" for him: where things fall, or the bottom of the screen when it lies flat
+    const dl = Math.hypot(mo.ax, mo.ay + 0.8) || 1,
+      down = Math.atan2(-mo.ax / dl, (mo.ay + 0.8) / dl);
+    // he stands on the side of the room that is the most under him, and changes his
+    // mind only when another one clearly is
+    if (Math.abs(wrapPi(down - phys.side)) > 0.9) phys.side = Math.round(down / (Math.PI / 2)) * (Math.PI / 2);
+    const target = phys.side,
+      err = wrapPi(target - phys.th);
+    phys.err = wrapPi(down - phys.th);
+    const out = knocked();
+    const level = phys.side === 0 && Math.abs(down) < 0.21 && mo.ay > 5;
+    phys.levelT = level && Math.abs(err) < 0.2 ? phys.levelT + dt : 0;
+    const home = 60 - phys.x;
+    const walk = !out && !conv.phase && phys.levelT > 1.5 && Math.abs(home) > 0.5 && !!(phys.touch & 8);
+    if (phys.sleep) {
+      // woken by a change of what he feels, by the room, or by himself
+      const da = Math.hypot(ax - phys.sa[0], ay - phys.sa[1]);
+      if (da > 0.1 * GW || box !== phys.box || walk || (!out && Math.abs(err) > 0.3)) {
+        phys.sleep = false;
+        phys.restT = 0;
+        if (da > 0.1 * GW) inputSeen();
       }
-      mo.v = 0;
     }
-    // pinned against a wall by a steep tilt
-    mo.pinnedT = at_ > 0.45 && mo.v === 0 ? mo.pinnedT + dt : 0;
-    if (Math.abs(mo.v) > 40 && !mo.shaking) setAcute(M.V > 0.45 ? "Grinning" : "Scared", 0.4);
-    else if (mo.pinnedT > 1.5 && !mo.shaking) setAcute("Sweating", 0.5);
-    // he leans against the slope to keep his balance
-    const deg = (Math.asin(clamp(tilt, -1, 1)) * 180) / Math.PI;
-    Ltilt.clear();
-    if (mo.off || Math.abs(deg) > 2) Ltilt.add({ "body.x": mo.off, "body.rot": clamp(-deg * 0.3, -10, 10) * RMK });
+    if (!phys.sleep) {
+      // muscles: a firm push on the ground, a softer twist in the air
+      const grounded = !!phys.touch;
+      let muscle = 0,
+        damp = 0;
+      if (!out) {
+        if (grounded && (phys.upT > 0.15 || Math.abs(err) < 0.5)) {
+          muscle = 70;
+          damp = 14;
+        } else if (!grounded) {
+          muscle = 26;
+          damp = 6;
+        }
+      }
+      phys.upT = grounded && !out && Math.abs(err) > 0.5 ? phys.upT + dt : 0;
+      // stuck on his side or on his roof: a hop, away from what he lies on
+      if (phys.upT > 0.5 && rt - phys.hopAt > 1.2) {
+        phys.hopAt = rt;
+        const t = phys.touch,
+          nx = (t & 1 ? 1 : 0) - (t & 2 ? 1 : 0),
+          ny = (t & 4 ? 1 : 0) - (t & 8 ? 1 : 0);
+        phys.vx += nx * 200 - (mo.ax / dl) * 260;
+        phys.vy += ny * 200 - ((mo.ay + 0.8) / dl) * 260;
+        phys.w += Math.sign(err) * 5;
+      }
+      const n = Math.max(1, Math.ceil(dt / (1 / 120))),
+        h = dt / n;
+      const was = phys.touch;
+      phys.touch = 0;
+      for (let i = 0; i < n; i++) {
+        physStep(h, ax, ay, back, muscle, damp, target, r);
+      }
+      const sp = Math.hypot(phys.vx, phys.vy);
+      phys.airT = phys.touch ? 0 : phys.airT + dt;
+      // thrown by the phone
+      if (!phys.touch && was && sp * view.s > 500 && rt - phys.thrownAt > 2) {
+        phys.thrownAt = rt;
+        nudge({ V: 0.03, A: 0.3, C: 0.1 });
+        if (!mo.shaking) report("throw", clamp((sp * view.s) / 3000, 0.2, 1));
+      }
+      if (sp * view.s > 250) phys.lively = true;
+      if (!out) {
+        if (phys.airT > 0.12 && sp * view.s > 300) setAcute(sp * view.s > 1700 ? "Scared" : M.V > 0.3 ? "Grinning" : "Alert", 0.35);
+        else if (sp > 50) setAcute(M.V > 0.45 ? "Grinning" : "Alert", 0.35);
+        if (sp > 50) face.lookAt(phys.x + (phys.vx / sp) * 120, phys.y + (phys.vy / sp) * 120);
+      }
+      // level again: he walks back home, on his own legs
+      phys.walking = walk && sp < 30;
+      if (phys.walking) {
+        const step = clamp(home * 2.5, -80, 80) * dt;
+        phys.x = Math.abs(step) >= Math.abs(home) || Math.abs(home) < 1 ? 60 : phys.x + step;
+      }
+      // rest
+      const still = sp < 4 && Math.abs(phys.w) < 0.06 && (out || Math.abs(err) < 0.3) && !walk;
+      phys.restT = still ? phys.restT + dt : 0;
+      if (phys.restT > 0.3) {
+        phys.sleep = true;
+        phys.vx = phys.vy = phys.w = 0;
+        phys.th = wrapPi(phys.th);
+        phys.sa = [ax, ay];
+        phys.box = box;
+        face.lookAt(null);
+        if (phys.shaken) {
+          phys.shaken = phys.lively = false;
+          dizzy(rand(2.5, 4));
+        } else if (phys.lively) {
+          phys.lively = false;
+          if (!out) setAcute(phys.hard >= 2 && rt - phys.hardAt < 3 ? "Hurt" : M.V > 0.2 ? "Happy" : "Normal", 1);
+        }
+      }
+    }
+    const [px, py, deg] = physPose();
+    Lphys.clear();
+    Lphys.add({ "body.x": px, "body.y": py, "body.rot": deg + (phys.walking ? 3 * Math.sin(rt * 14) : 0) });
+    if (phys.touch && !out) {
+      // on a slope he cannot follow: he leans uphill, the base planted
+      const lean = clamp((-err * 180) / Math.PI * 0.3, -7, 7);
+      // heavier or lighter with the moves of the phone
+      const load = clamp(((-Math.sin(phys.th) * ax + Math.cos(phys.th) * ay) / GW - 1) * 0.05, -0.04, 0.08);
+      Lphys.add({ "body.skew": lean, "body.sy": -load, "body.sx": load * 0.6 });
+    }
   }
   // iOS asks for permission, from a gesture. WebKit only counts the end of a touch
   // (touchend, pointerup, click) as one, not pointerdown.
   const MotionPerm = (window as any).DeviceMotionEvent as { requestPermission?: () => Promise<string> } | undefined;
   const needsPerm = !!MotionPerm && typeof MotionPerm.requestPermission === "function";
   let motionPerm: "unknown" | "asking" | "granted" | "denied" | "error" = needsPerm ? "unknown" : "granted";
-  let motionEvents = 0;
   function askMotion() {
     if (!needsPerm || mo.t || motionPerm === "asking" || motionPerm === "granted" || motionPerm === "denied") return;
     motionPerm = "asking";
@@ -1976,12 +2250,12 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     Lap.clear();
     if (Dir.act) {
       const t = rt - Dir.t0;
-      if (t >= Dir.dur || ctl.system || ctl.acute || drag.on || fly.on || talk.on) endAct(t < Dir.dur);
+      if (t >= Dir.dur || ctl.system || ctl.acute || drag.on || airborne() || talk.on) endAct(t < Dir.dur);
       else Dir.act.run(t, t / Dir.dur, Dir.st);
     }
   }
   function director() {
-    if (!auto || Dir.act || at < Dir.nextAt || ctl.system || ctl.acute || drag.on || fly.on || talk.on || conv.phase || M.asleep || doze.on || ACT_NO.has(shown)) return;
+    if (!auto || Dir.act || at < Dir.nextAt || ctl.system || ctl.acute || drag.on || airborne() || talk.on || conv.phase || M.asleep || doze.on || ACT_NO.has(shown)) return;
     const pool: [string, number][] = [];
     let total = 0;
     for (const [n, a] of Object.entries(ACTS)) {
@@ -2009,7 +2283,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
   // ------------------------------------------------------------------ boredom → doze → sleep
   const doze: any = { on: false, t0: 0, nodT: 0, forced: false, jerked: false };
   function boredomUpdate() {
-    if (!auto || M.asleep || ctl.system || conv.phase || talk.on || drag.on || fly.on || hug) return;
+    if (!auto || M.asleep || ctl.system || conv.phase || talk.on || drag.on || airborne() || hug) return;
     const k = (isNight() ? 0.5 : 1) * (M.E < 0.2 ? 0.6 : 1);
     const idle = at - lastInput;
     if (!doze.on && idle > 45 * k && !ctl.acute) {
@@ -2929,7 +3203,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
   }
   const search = { dir: 1, next: 0 };
   function missUpdate() {
-    if (P.inside || P.leftAt == null || P.type !== "mouse" || !auto || ctl.system || ctl.acute || M.asleep || drag.on || fly.on) return;
+    if (P.inside || P.leftAt == null || P.type !== "mouse" || !auto || ctl.system || ctl.acute || M.asleep || drag.on || airborne()) return;
     const t = rt - P.leftAt;
     if (t < 3 || ctl.miss) return;
     if (rt > search.next) {
@@ -3155,7 +3429,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
       gaze.glanceUntil = 0;
       face.lookAt(null);
     }
-    if (drag.on || fly.on || (Dir.act && ["lookAround", "glanceAtCursor", "peekRoof", "daydream", "suspicious", "peekaboo", "lookUp"].includes(Dir.name))) return;
+    if (drag.on || airborne() || (Dir.act && ["lookAround", "glanceAtCursor", "peekRoof", "daydream", "suspicious", "peekaboo", "lookUp"].includes(Dir.name))) return;
     if (conv.phase === "wait" || (ctl.system && ctl.system.tag === "typing")) return;
     if (M.asleep || shown === "Sleeping" || shown === "Dead" || shown === "Initializing" || shown === "Angry" || shown === "Sad") return;
     if (R.name === "sulk") {
@@ -3271,7 +3545,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     Lwx.clear();
     if (!wx.kind) return;
     const t = rt - wx.t0;
-    if (t >= wx.dur || ctl.system || M.asleep || drag.on || fly.on) {
+    if (t >= wx.dur || ctl.system || M.asleep || drag.on || airborne()) {
       wx.kind = null;
       return;
     }
@@ -3450,7 +3724,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     shyUpdate();
     dragUpdate();
     flyUpdate(dt);
-    motionUpdate(dt);
+    physUpdate(dt);
     weatherFxUpdate();
     gazeUpdate();
     missUpdate();
@@ -3470,7 +3744,7 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     if (id !== shown) show(id, { startle: ctl.acute && ctl.acute.id === "Alert" && shown === "Sleeping" });
     Ls.clear();
     Lsp.clear();
-    if (shown !== "Dead" && shown !== "Hurt") want.bandage = fly.hard >= 2 && rt - shownAt < 4 ? want.bandage : 0;
+    if (shown !== "Dead" && shown !== "Hurt") want.bandage = (fly.hard >= 2 || phys.hard >= 2) && rt - shownAt < 4 ? want.bandage : 0;
     const f = SIG[shown];
     if (f) f(sig);
     if (shown === "Initializing") want.scan = 1;
@@ -3637,7 +3911,11 @@ export function createLife(host: LifeHost, opts: LifeOptions): Life {
     debug() {
       return {
         expression: shown, source: ctl.source, phase: conv.phase, talk: talk.on ? { kind: talk.kind, mode: talk.mode, text: talk.text, rev: talk.rev } : null,
-        motion: { secure: window.isSecureContext, permission: motionPerm, events: motionEvents, sign: mo.vote >= 0 ? 1 : -1, tilt: +mo.tilt.toFixed(2), off: Math.round(mo.off), shaking: mo.shaking, flying: fly.on },
+        motion: {
+          secure: window.isSecureContext, permission: motionPerm, events: motionEvents, sign: motionSign(), live: phys.live, sleep: phys.sleep,
+          x: Math.round(phys.x - 60), y: Math.round(phys.y - body.cy), rot: Math.round((phys.th * 180) / Math.PI), speed: Math.round(Math.hypot(phys.vx, phys.vy)),
+          touch: phys.touch, shaking: mo.shaking,
+        },
         mood: { ...M }, backend, delta: { ...D }, weather: condition, dayPhase: phase, weatherFx: wx.kind, glance: rt < gaze.glanceUntil ? { x: gaze.gx, y: gaze.gy, top: view.y0, height: view.h } : null, bodyColor: face.bodyColor, asleep: M.asleep, act: Dir.name, reaction: R.name, auto,
       };
     },
